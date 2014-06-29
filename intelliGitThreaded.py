@@ -8,10 +8,10 @@ https://github.com/wikiteams/github-data-tools/tree/master/pandas
 @since 1.4.0408
 @author Oskar Jarczyk
 
-@update 21.06.2014
+@update 27.06.2014
 '''
 
-version_name = 'Version 2.3 codename: Tomato'
+version_name = 'Version 2.X.1 codename: SplinterCell'
 
 from intelliRepository import MyRepository
 from github import Github, UnknownObjectException, GithubException
@@ -22,6 +22,7 @@ import scream
 import gc
 import os
 import os.path
+import platform
 import sys
 import codecs
 import cStringIO
@@ -29,16 +30,19 @@ from bs4 import BeautifulSoup
 from lxml import html, etree
 from pyvirtualdisplay import Display
 from selenium import webdriver
+from splinter import Browser
 import __builtin__
 import socket
 import time
 import threading
 import traceback
-#import inspect
+from selenium.webdriver.support.ui import WebDriverWait
 
 
 count___ = 'selenium'
 result_filename__ = 'developers_revealed_from_top.csv'
+use_splinter = False
+splinter__driver = 'firefox'
 
 auth_with_tokens = True
 use_utf8 = True
@@ -57,7 +61,7 @@ github_clients = list()
 github_clients_ids = list()
 
 safe_margin = 100
-timeout = 50
+timeout = 10
 sleepy_head_time = 25
 force_raise = False
 show_trace = False
@@ -94,7 +98,8 @@ def usage():
 try:
     opts, args = getopt.getopt(sys.argv[1:], "ht:u:r:s:e:vx:z:qim:j:d:y", ["help", "tokens=",
                                "utf8=", "resume=", "resumestage=", "entity=", "verbose",
-                               "threads=", "timeout=", "reverse", "intelli", "safemargin=", "sleep=", "fraise=", "trace", "resumeinclusive"])
+                               "threads=", "timeout=", "reverse", "intelli", "safemargin=",
+                               "sleep=", "fraise=", "trace", "resumeinclusive"])
 except getopt.GetoptError as err:
     # print help information and exit:
     print str(err)  # will print something like "option -a not recognized"
@@ -265,6 +270,7 @@ repository = github object, repo = my class object, contributor = nameduser
 '''
 def developer_revealed(thread_getter_instance, repository, repo, contributor):
     global result_writer
+    global use_splinter
 
     developer_login = contributor.login
     scream.log_debug('Assigning a contributor: ' + str(developer_login) + ' to a repo: ' + str(repository.name), True)
@@ -348,7 +354,10 @@ def developer_revealed(thread_getter_instance, repository, repo, contributor):
                         assert total_his_collaborators is not None
                     elif count___ == 'selenium':
                         scream.say('Using selenium for thread about  ' + str(developer_login) + ' \'s repositories')
-                        result = thread_getter_instance.analyze_with_selenium(his_repo)  # wyciagnij statystyki przez selenium, i zwroc w tablicy:
+                        if use_splinter:
+                            result = thread_getter_instance.analyze_with_splinter(his_repo)
+                        else:
+                            result = thread_getter_instance.analyze_with_selenium(his_repo)  # wyciagnij statystyki przez selenium, i zwroc w tablicy:
                         # commits, branches, releases, contributors, issues, pull requests
                         if result['status'] == '404':
                             continue
@@ -473,14 +482,22 @@ class GeneralGetter(threading.Thread):
         self.github_client = github_client
 
     def run(self):
+        global use_splinter
+
         scream.cout('GeneralGetter starts work...')
         self.finished = False
         # it is quite reasonable to initiate a display driver for selenium
         # per one getter, threads work on jobs linear so its the max partition of driver
         # we can allow, multiple threads working on one virtual display - its without sense
-        self.initiate_selenium()
+        if use_splinter:
+            self.initiate_splinter()
+        else:
+            self.initiate_selenium()
         # now its ok to start retrieving data.. allonsy !
         self.get_data()
+
+    def initiate_splinter(self):
+        scream.say('Initiating splinter...')
 
     def initiate_selenium(self):
         scream.say('Initiating selenium...')
@@ -489,6 +506,128 @@ class GeneralGetter(threading.Thread):
         self.browser = webdriver.Firefox()
         self.browser.implicitly_wait(15)
         scream.say('Selenium ready for action')
+
+    def analyze_with_splinter(self, repository):
+        result = dict()
+        scream.say('Starting webinterpret for ' + repository.html_url + '..')
+        assert repository is not None
+        url = repository.html_url
+        assert url is not None
+        with Browser(splinter__driver, wait_time=timeout) as splinter__browser:
+            while True:
+                try:
+                    if splinter__driver == 'firefox':
+                        splinter__browser.set_page_load_timeout(15)
+                    splinter__browser.visit(url)
+                    scream.say('Data from web retrieved')
+                    if splinter__driver == 'firefox':
+                        doc = html.document_fromstring(unicode(splinter__browser.page_source))
+                    elif splinter__driver == 'chrome':
+                        doc = html.document_fromstring(unicode(splinter__browser.html))
+                    elif splinter__driver == 'phantomjs':
+                        doc = html.document_fromstring(unicode(splinter__browser.html))
+                    else:
+                        assert False  # rest of browser not yet supported..
+                    scream.log_debug(str(url), True)
+                    scream.say('Continue to work on ' + url)
+                    scream.say('Page source sent further')
+
+                    WebDriverWait(splinter__browser, 3).until(lambda s: is_number(s.find_by_id('span.octicon.octicon-organization').first.text))
+
+                    scream.say('Verify if 404 (repo deleted) otherwise keep on going')
+                    parallax = doc.xpath('//div[@id="parallax_illustration"]')
+
+                    if (len(parallax) > 0):
+                        scream.say('Verified that 404 (repo deleted)')
+                        result['status'] = '404'
+                        break
+
+                    scream.say('Verified that not 404')
+
+                    scream.say('Verify if repo empty otherwise keep on going')
+                    repo_empty = doc.xpath('//div[@class="blankslate has-fixed-width"]')
+
+                    if (len(repo_empty) > 0):
+                        scream.say('Verified that repo is empty')
+                        result['status'] = 'EMPTY'
+                        break
+
+                    scream.say('Verified that repo not empty')
+
+                    ns = doc.xpath('//ul[@class="numbers-summary"]')
+                    sunken = doc.xpath('//ul[@class="sunken-menu-group"]')
+
+                    scream.say('XPath made some search for ' + url + ' .. move on to bsoup..')
+                    scream.say('Xpath done searching')
+                    scream.say('Element found?: ' + str(len(ns) == 1))
+
+                    element = ns[0]
+                    element_sunken = sunken[0]
+                    local_soup = BeautifulSoup(etree.tostring(element))
+                    local_soup_sunken = BeautifulSoup(etree.tostring(element_sunken))
+
+                    enumarables = local_soup.findAll("li")
+                    enumarables_more = local_soup_sunken.findAll("li")
+
+                    commits = enumarables[0]
+                    scream.say('enumarables[0]')
+                    commits_number = analyze_tag(commits.find("span", {"class": "num"}))
+                    scream.say('analyze_tag finished execution for commits_number')
+                    scream.say('Before parse number: ' + str(commits_number))
+                    result['commits'] = parse_number(commits_number)
+                    scream.log_debug(result['commits'], True)
+                    scream.say('enumarables[1]')
+                    branches = enumarables[1]
+                    branches_number = analyze_tag(branches.find("span", {"class": "num"}))
+                    scream.say('Before parse number: ' + str(branches_number))
+                    result['branches'] = parse_number(branches_number)
+                    scream.log_debug(result['branches'], True)
+                    scream.say('enumarables[2]')
+                    releases = enumarables[2]
+                    releases_number = analyze_tag(releases.find("span", {"class": "num"}))
+                    scream.say('Before parse number: ' + str(releases_number))
+                    result['releases'] = parse_number(releases_number)
+                    scream.log_debug(result['releases'], True)
+                    scream.say('enumarables[3]')
+                    contributors = enumarables[3]
+                    contributors_number = analyze_tag(contributors.find("span", {"class": "num"}))
+                    scream.say('Before parse number: ' + str(contributors_number))
+                    result['contributors'] = parse_number(contributors_number)
+                    scream.log_debug(result['contributors'], True)
+
+                    result['issues'] = 0
+                    result['pulls'] = 0
+
+                    for enumerable___ in enumarables_more:
+                        if enumerable___["aria-label"] == "Pull Requests":
+                            pulls_tag = enumerable___
+                            pulls_number = analyze_tag(pulls_tag.find("span", {"class": "counter"}))
+                            scream.say('Before parse number: ' + str(pulls_number))
+                            result['pulls'] = parse_number(pulls_number)
+                        elif enumerable___["aria-label"] == "Issues":
+                            issues_tag = enumerable___
+                            issues_number = analyze_tag(issues_tag.find("span", {"class": "counter"}))
+                            scream.say('Before parse number: ' + str(issues_number))
+                            result['issues'] = parse_number(issues_number)
+                    
+                    result['status'] = 'OK'
+                    break
+                except TypeError as ot:
+                    scream.say(str(ot))
+                    scream.say('Scrambled results (TypeError). Maybe GitHub down. Retry')
+                    time.sleep(5.0)
+                    if force_raise:
+                        raise
+                except Exception as e:
+                    scream.say(str(e))
+                    scream.say('No response from selenium. Retry')
+                    time.sleep(2.0)
+                    if force_raise:
+                        raise
+
+        assert 'status' in result
+        return result
+
 
     def analyze_with_selenium(self, repository):
         result = dict()
@@ -609,15 +748,20 @@ class GeneralGetter(threading.Thread):
         self.finished = finished
 
     def cleanup(self):
-        try:
-            self.browser.close()
-            self.browser.quit()
-            self.display.stop()
-            self.display.popen.kill()
-        except:
-            scream.say('Did my best to clean up after selenium and pyvirtualdisplay')
-            if force_raise:
-                raise
+        global use_splinter
+
+        if use_splinter:
+            scream.say("Cleanup of splinter")  # (not neaded. Browser will quit by itself in `use` block)
+        else:
+            try:
+                self.browser.close()
+                self.browser.quit()
+                self.display.stop()
+                self.display.popen.kill()
+            except:
+                scream.say('Did my best to clean up after selenium and pyvirtualdisplay')
+                if force_raise:
+                    raise
         scream.say('Marking thread on ' + self.repo.getKey() + ' as finished..')
         self.finished = True
         scream.say('Terminating thread on ' + self.repo.getKey() + ' ...')
@@ -743,6 +887,10 @@ def num_modulo(thread_id_count__):
     return thread_id_count__ % no_of_threads
 
 
+def check_os_running():
+    return platform.system()
+
+
 if __name__ == "__main__":
     '''
     Starts process of work on CSV files which are output of Google Bigquery
@@ -752,6 +900,16 @@ if __name__ == "__main__":
     scream.say('Start main execution')
     scream.say('Welcome to WikiTeams.pl GitHub repo analyzer!')
     scream.say(version_name)
+
+    if check_os_running() == 'Windows' and count___ == 'selenium':
+        decision_from_cmd = raw_input("[win-specific] Do you want to use splinter instead of selenium ?? [y/n] ")
+        use_splinter = str(decision_from_cmd).strip() in ['Y','y','yes','true','doit']
+        if use_splinter:
+            splinter__driver = str(raw_input("[default:firefox] Which browser driver to use with splinter ?? [firefox/chrome/phantomjs] ")).strip()
+            if splinter__driver == '':
+                splinter__driver = 'firefox'
+            if splinter__driver in ['phantomjs','phantom']:
+                splinter__driver = 'phantomjs'
 
     secrets = []
 

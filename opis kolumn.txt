@@ -1,0 +1,57 @@
+repo_url - [string] adres repozytorium, zaczyna sie od https, zunifikowany dla każdego repo, kończy się nazwawlasciciela/nazwarepo, jednoznacznie identyfikuje repozytorium
+
+repo_name - [string] nazwa repozytorium
+
+repo_owner - [string] aktualny właściciel repozytorium
+
+stargazers_count - [int] liczba gwiazdek repozytorium
+
+watchers_count - [int] liczba śledzących repozytorium
+
+developer_login - [string] login dewelopera bedacego czlonkiem zespolu (repo) opisanego wyzej
+
+developer_name - [string] imie i nazwisko dewelopera (jezeli podane)
+
+developer_followers - [int] ile osób śledzi dewelopera
+
+developer_following - [int] ile osób śledzi ten deweloper
+
+developer_collaborators - [int] ilosc repo, w ktorych jest team member (czlonkiem zespolu)
+
+developer_company - [string] firma, do której należy deweloper (jezeli podano)
+
+developer_contributions - [int] ilosc repo, w ktorych jest kontrybutorem
+
+created_at - [datetime] kiedy deweloper założył konto
+
+developer_is_hireable,
+
+total_his_repositories,
+
+total_in-his-repos_stars,
+
+total_in-his-repos_collaborators,
+
+total_in-his-repos_contributors,
+
+total_in-his-repos_watchers,
+
+total_in-his-repos_forks,
+
+total_in-his-repos_has_issues,
+
+total_in-his-repos_has_wiki,
+
+total_in-his-repos_open_issues,
+
+total_network_count,
+
+developer_location - [string] miejscowosc dewelopera (jezeli podano)
+
+developer_total_private_repos,
+
+developer_total_public_repos,
+
+total_in-his-repos_issues,
+
+total_in-his-repos_pull_requests
