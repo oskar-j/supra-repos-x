@@ -479,6 +479,7 @@ class GeneralGetter(threading.Thread):
     github_client = None
     display = None
     browser = None
+    splinter__browser = None
 
     def __init__(self, threadId, repository, repo, github_client):
         scream.say('Initiating GeneralGetter, running __init__ procedure.')
@@ -507,6 +508,8 @@ class GeneralGetter(threading.Thread):
 
     def initiate_splinter(self):
         scream.say('Initiating splinter...')
+        self.splinter__browser = Browser(splinter__driver, wait_time=timeout)
+        scream.say('Splinter ready for action')
 
     def initiate_selenium(self):
         scream.say('Initiating selenium...')
@@ -522,174 +525,142 @@ class GeneralGetter(threading.Thread):
         assert repository is not None
         url = repository.html_url
         assert url is not None
-        with Browser(splinter__driver, wait_time=timeout) as splinter__browser:
-            while True:
+
+        while True:
+            try:
                 try:
-                    try:
-                        splinter__browser.set_page_load_timeout(15)
-                    except:
-                        scream.say('')
-                    
-                    try:
-                        splinter__browser.ensure_success_response()
-                    except:
-                        scream.say('')
+                    self.splinter__browser.set_page_load_timeout(15)
+                except:
+                    scream.say('')
+                
+                try:
+                    self.splinter__browser.ensure_success_response()
+                except:
+                    scream.say('')
 
-                    #if splinter__driver == 'zope.testbrowser':
-                    #    splinter__browser.set_handle_robots(False)
+                self.splinter__browser.visit(url)
+                scream.say('Data from web retrieved')
 
-                    splinter__browser.visit(url)
-                    scream.say('Data from web retrieved')
+                if splinter__driver == 'firefox':
+                    doc = html.document_fromstring(unicode(self.splinter__browser.page_source))
+                elif splinter__driver == 'chrome':
+                    doc = html.document_fromstring(unicode(self.splinter__browser.html))
+                elif splinter__driver == 'phantomjs':
+                    doc = html.document_fromstring(unicode(self.splinter__browser.html))
+                elif splinter__driver == 'zope.testbrowser':
+                    #splinter__browser.set_handle_robots(False)
+                    doc = html.document_fromstring(unicode(self.splinter__browser.html.decode('utf-8')))
+                else:
+                    assert False  # rest of browser not yet supported..
+                scream.log_debug(str(url), True)
+                scream.say('Continue to work on ' + url)
+                scream.say('Page source sent further')
 
-                    if splinter__driver == 'firefox':
-                        doc = html.document_fromstring(unicode(splinter__browser.page_source))
-                    elif splinter__driver == 'chrome':
-                        doc = html.document_fromstring(unicode(splinter__browser.html))
-                    elif splinter__driver == 'phantomjs':
-                        doc = html.document_fromstring(unicode(splinter__browser.html))
-                    elif splinter__driver == 'zope.testbrowser':
-                        #splinter__browser.set_handle_robots(False)
-                        doc = html.document_fromstring(unicode(splinter__browser.html.decode('utf-8')))
-                    else:
-                        assert False  # rest of browser not yet supported..
-                    scream.log_debug(str(url), True)
-                    scream.say('Continue to work on ' + url)
-                    scream.say('Page source sent further')
+                #splinter__browser.screenshot(name=repository.key, suffix='.png')
 
-                    #splinter__browser.screenshot(name=repository.key, suffix='.png')
+                scream.say('Verify if 404 (repo deleted) otherwise keep on going')
+                parallax = doc.xpath('//div[@id="parallax_illustration"]')
 
-                    scream.say('Verify if 404 (repo deleted) otherwise keep on going')
-                    parallax = doc.xpath('//div[@id="parallax_illustration"]')
-
-                    if (len(parallax) > 0):
-                        scream.say('Verified that 404 (repo deleted)')
-                        result['status'] = '404'
-                        break
-
-                    scream.say('Verified that not 404')
-
-                    scream.say('Verify if repo empty otherwise keep on going')
-                    repo_empty = doc.xpath('//div[@class="blankslate has-fixed-width"]')
-
-                    if (len(repo_empty) > 0):
-                        scream.say('Verified that repo is empty')
-                        result['status'] = 'EMPTY'
-                        break
-
-                    scream.say('Verified that repo not empty')
-
-                    if splinter__driver == 'phantomjs':
-                        #WebDriverWait(splinter__browser, 10).until(waiter)
-                        #this works shitty try this below
-                        while True:
-                            scream.say("Wait for the AJAX to do the magic")
-                            if splinter__browser.is_element_not_present_by_xpath('//span[@class="octicon octicon-organization"]//..//..//text()[normalize-space(.)="Fetching contributors"]', wait_time=5):
-                                break
-                            else:
-                                scream.say("AJAX didnt work on time")
-                        #splinter__browser.reload() 
-                        doc = html.document_fromstring(unicode(splinter__browser.html))
-
-                    assert "Fetching contributors" not in doc
-
-                    ns = doc.xpath('//ul[@class="numbers-summary"]')
-                    sunken = doc.xpath('//ul[@class="sunken-menu-group"]')
-
-                    scream.say('XPath made some search for ' + url + ' .. move on to bsoup..')
-                    scream.say('Xpath done searching')
-                    scream.say('Element found?: ' + str(len(ns) == 1))
-
-                    element = ns[0]
-                    element_sunken = sunken[0]
-                    local_soup = BeautifulSoup(etree.tostring(element))
-                    local_soup_sunken = BeautifulSoup(etree.tostring(element_sunken))
-
-                    enumarables = local_soup.findAll("li")
-                    enumarables_more = local_soup_sunken.findAll("li")
-
-                    commits = enumarables[0]
-                    scream.say('enumarables[0]')
-                    commits_number = analyze_tag(commits.find("span", {"class": "num"}))
-                    scream.say('analyze_tag finished execution for commits_number')
-                    scream.say('Before parse number: ' + str(commits_number))
-                    result['commits'] = parse_number(commits_number)
-                    scream.log_debug(result['commits'], True)
-                    scream.say('enumarables[1]')
-                    branches = enumarables[1]
-                    branches_number = analyze_tag(branches.find("span", {"class": "num"}))
-                    scream.say('Before parse number: ' + str(branches_number))
-                    result['branches'] = parse_number(branches_number)
-                    scream.log_debug(result['branches'], True)
-                    scream.say('enumarables[2]')
-                    releases = enumarables[2]
-                    releases_number = analyze_tag(releases.find("span", {"class": "num"}))
-                    scream.say('Before parse number: ' + str(releases_number))
-                    result['releases'] = parse_number(releases_number)
-                    scream.log_debug(result['releases'], True)
-
-                    if splinter__driver == 'phantomjs':
-                        # this is obvously a bug, phantomjs wont provide html generated with AJAX
-                        scream.say('enumarables[3]')
-                        #contributors = enumarables[3]
-                        #contributors_number = splinter__browser.find_by_xpath('//ul[@class="numbers-summary"]//span[@class="octicon octicon-organization"]//..//..')[1].text.strip()
-                        contributors = enumarables[3]
-                        contributors_number = analyze_tag(contributors.find("span", {"class": "num"}))
-                        scream.say('Before parse number: ' + str(contributors_number))
-                        result['contributors'] = parse_number(contributors_number)
-                        scream.log_debug(result['contributors'], True)
-
-                        result['issues'] = 0
-                        result['pulls'] = 0
-
-                        for enumerable___ in enumarables_more:
-                            if enumerable___["aria-label"] == "Pull Requests":
-                                pulls_tag = enumerable___
-                                pulls_number = analyze_tag(pulls_tag.find("span", {"class": "counter"}))
-                                scream.say('Before parse number: ' + str(pulls_number))
-                                result['pulls'] = parse_number(pulls_number)
-                            elif enumerable___["aria-label"] == "Issues":
-                                issues_tag = enumerable___
-                                issues_number = analyze_tag(issues_tag.find("span", {"class": "counter"}))
-                                scream.say('Before parse number: ' + str(issues_number))
-                                result['issues'] = parse_number(issues_number)
-
-                    else:
-                        scream.say('enumarables[3]')
-                        contributors = enumarables[3]
-                        contributors_number = analyze_tag(contributors.find("span", {"class": "num"}))
-                        scream.say('Before parse number: ' + str(contributors_number))
-                        result['contributors'] = parse_number(contributors_number)
-                        scream.log_debug(result['contributors'], True)
-
-                        result['issues'] = 0
-                        result['pulls'] = 0
-
-                        for enumerable___ in enumarables_more:
-                            if enumerable___["aria-label"] == "Pull Requests":
-                                pulls_tag = enumerable___
-                                pulls_number = analyze_tag(pulls_tag.find("span", {"class": "counter"}))
-                                scream.say('Before parse number: ' + str(pulls_number))
-                                result['pulls'] = parse_number(pulls_number)
-                            elif enumerable___["aria-label"] == "Issues":
-                                issues_tag = enumerable___
-                                issues_number = analyze_tag(issues_tag.find("span", {"class": "counter"}))
-                                scream.say('Before parse number: ' + str(issues_number))
-                                result['issues'] = parse_number(issues_number)
-                    
-                    result['status'] = 'OK'
+                if (len(parallax) > 0):
+                    scream.say('Verified that 404 (repo deleted)')
+                    result['status'] = '404'
                     break
-                except TypeError as ot:
-                    scream.say(str(ot))
-                    scream.say('Scrambled results (TypeError). Maybe GitHub down. Retry')
-                    time.sleep(5.0)
-                    if force_raise:
-                        raise
-                except Exception as e:
-                    scream.say(str(e))
-                    scream.say('No response from selenium. Retry')
-                    time.sleep(2.0)
-                    if force_raise:
-                        raise
+
+                scream.say('Verified that not 404')
+
+                scream.say('Verify if repo empty otherwise keep on going')
+                repo_empty = doc.xpath('//div[@class="blankslate has-fixed-width"]')
+
+                if (len(repo_empty) > 0):
+                    scream.say('Verified that repo is empty')
+                    result['status'] = 'EMPTY'
+                    break
+
+                scream.say('Verified that repo not empty')
+
+                if splinter__driver == 'phantomjs':
+                    #WebDriverWait(splinter__browser, 10).until(waiter)
+                    while True:
+                        scream.say("Wait for the AJAX to do the magic")
+                        if self.splinter__browser.is_element_not_present_by_xpath('//span[@class="octicon octicon-organization"]//..//..//text()[normalize-space(.)="Fetching contributors"]', wait_time=5):
+                            break
+                        else:
+                            scream.say("AJAX didnt work on time")
+                    doc = html.document_fromstring(unicode(self.splinter__browser.html))
+
+                assert "Fetching contributors" not in doc
+
+                ns = doc.xpath('//ul[@class="numbers-summary"]')
+                sunken = doc.xpath('//ul[@class="sunken-menu-group"]')
+
+                scream.say('XPath made some search for ' + url + ' .. move on to bsoup..')
+                scream.say('Xpath done searching')
+                scream.say('Element found?: ' + str(len(ns) == 1))
+
+                element = ns[0]
+                element_sunken = sunken[0]
+                local_soup = BeautifulSoup(etree.tostring(element))
+                local_soup_sunken = BeautifulSoup(etree.tostring(element_sunken))
+
+                enumarables = local_soup.findAll("li")
+                enumarables_more = local_soup_sunken.findAll("li")
+
+                commits = enumarables[0]
+                scream.say('enumarables[0]')
+                commits_number = analyze_tag(commits.find("span", {"class": "num"}))
+                scream.say('analyze_tag finished execution for commits_number')
+                scream.say('Before parse number: ' + str(commits_number))
+                result['commits'] = parse_number(commits_number)
+                scream.log_debug(result['commits'], True)
+                scream.say('enumarables[1]')
+                branches = enumarables[1]
+                branches_number = analyze_tag(branches.find("span", {"class": "num"}))
+                scream.say('Before parse number: ' + str(branches_number))
+                result['branches'] = parse_number(branches_number)
+                scream.log_debug(result['branches'], True)
+                scream.say('enumarables[2]')
+                releases = enumarables[2]
+                releases_number = analyze_tag(releases.find("span", {"class": "num"}))
+                scream.say('Before parse number: ' + str(releases_number))
+                result['releases'] = parse_number(releases_number)
+                scream.log_debug(result['releases'], True)
+
+                scream.say('enumarables[3]')
+                contributors = enumarables[3]
+                contributors_number = analyze_tag(contributors.find("span", {"class": "num"}))
+                scream.say('Before parse number: ' + str(contributors_number))
+                result['contributors'] = parse_number(contributors_number)
+                scream.log_debug(result['contributors'], True)
+
+                result['issues'] = 0
+                result['pulls'] = 0
+
+                for enumerable___ in enumarables_more:
+                    if enumerable___["aria-label"] == "Pull Requests":
+                        pulls_tag = enumerable___
+                        pulls_number = analyze_tag(pulls_tag.find("span", {"class": "counter"}))
+                        scream.say('Before parse number: ' + str(pulls_number))
+                        result['pulls'] = parse_number(pulls_number)
+                    elif enumerable___["aria-label"] == "Issues":
+                        issues_tag = enumerable___
+                        issues_number = analyze_tag(issues_tag.find("span", {"class": "counter"}))
+                        scream.say('Before parse number: ' + str(issues_number))
+                        result['issues'] = parse_number(issues_number)
+                
+                result['status'] = 'OK'
+                break
+            except TypeError as ot:
+                scream.say(str(ot))
+                scream.say('Scrambled results (TypeError). Maybe GitHub down. Retry')
+                time.sleep(5.0)
+                if force_raise:
+                    raise
+            except Exception as e:
+                scream.say(str(e))
+                scream.say('No response from selenium. Retry')
+                time.sleep(2.0)
+                if force_raise:
+                    raise
 
         assert 'status' in result
         return result
@@ -817,7 +788,11 @@ class GeneralGetter(threading.Thread):
         global use_splinter
 
         if use_splinter:
-            scream.say("Cleanup of splinter")  # (not neaded. Browser will quit by itself in `use` block)
+            scream.say("Cleanup of splinter")
+            try:
+                self.splinter__browser.quit()
+            except:
+                scream.say('Did my best to clean up')
         else:
             try:
                 self.browser.close()
