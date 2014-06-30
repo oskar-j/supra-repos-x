@@ -36,7 +36,7 @@ import socket
 import time
 import threading
 import traceback
-from selenium.webdriver.support.ui import WebDriverWait
+#from selenium.webdriver.support.ui import WebDriverWait
 
 
 count___ = 'selenium'
@@ -525,9 +525,19 @@ class GeneralGetter(threading.Thread):
         with Browser(splinter__driver, wait_time=timeout) as splinter__browser:
             while True:
                 try:
-                    if splinter__driver == 'firefox':
+                    try:
                         splinter__browser.set_page_load_timeout(15)
-                    #splinter__browser.ensure_success_response()
+                    except:
+                        scream.say('')
+                    
+                    try:
+                        splinter__browser.ensure_success_response()
+                    except:
+                        scream.say('')
+
+                    #if splinter__driver == 'zope.testbrowser':
+                    #    splinter__browser.set_handle_robots(False)
+
                     splinter__browser.visit(url)
                     scream.say('Data from web retrieved')
 
@@ -538,7 +548,8 @@ class GeneralGetter(threading.Thread):
                     elif splinter__driver == 'phantomjs':
                         doc = html.document_fromstring(unicode(splinter__browser.html))
                     elif splinter__driver == 'zope.testbrowser':
-                        doc = html.document_fromstring(unicode(splinter__browser.html))
+                        #splinter__browser.set_handle_robots(False)
+                        doc = html.document_fromstring(unicode(splinter__browser.html.decode('utf-8')))
                     else:
                         assert False  # rest of browser not yet supported..
                     scream.log_debug(str(url), True)
